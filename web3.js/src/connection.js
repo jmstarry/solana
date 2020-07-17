@@ -298,10 +298,7 @@ type LeaderSchedule = {
   [address: string]: number[],
 };
 
-const GetLeaderScheduleResult = struct.record([
-  'string',
-  struct.array(['number']),
-]);
+const GetLeaderScheduleResult = 'object';
 
 /**
  * Transaction error or null
@@ -442,7 +439,7 @@ const GetEpochScheduleRpcResult = struct({
 /**
  * Expected JSON RPC response for the "getLeaderSchedule" message
  */
-const GetLeaderScheduleRpcResult = jsonRpcResultAndContext(
+const GetLeaderScheduleRpcResult = jsonRpcResult(
   GetLeaderScheduleResult,
 );
 
@@ -1504,7 +1501,9 @@ export class Connection {
    */
   async getLeaderSchedule(): Promise<LeaderSchedule> {
     const unsafeRes = await this._rpcRequest('getLeaderSchedule', []);
+    console.log("UNSAFE", unsafeRes);
     const res = GetLeaderScheduleRpcResult(unsafeRes);
+    console.log("RES", res);
     if (res.error) {
       throw new Error('failed to get leader schedule: ' + res.error.message);
     }
