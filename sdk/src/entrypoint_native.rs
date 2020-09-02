@@ -4,7 +4,7 @@
 use crate::abi_example::AbiExample;
 use crate::{
     account::Account, account::KeyedAccount, instruction::CompiledInstruction,
-    instruction::InstructionError, message::Message, pubkey::Pubkey,
+    instruction::Instruction, instruction::InstructionError, message::Message, pubkey::Pubkey,
 };
 use std::{cell::RefCell, rc::Rc, sync::Arc};
 
@@ -225,6 +225,8 @@ pub trait InvokeContext {
     fn add_executor(&mut self, pubkey: &Pubkey, executor: Arc<dyn Executor>);
     /// Get the completed loader work that can be re-used across executions
     fn get_executor(&mut self, pubkey: &Pubkey) -> Option<Arc<dyn Executor>>;
+    /// Add Instruction
+    fn record_instruction(&self, instruction: Instruction);
 }
 
 #[derive(Clone, Copy, Debug)]

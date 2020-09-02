@@ -10,7 +10,7 @@ use solana_sdk::{
         ComputeBudget, ComputeMeter, ErasedProcessInstruction, ErasedProcessInstructionWithContext,
         Executor, InvokeContext, Logger, ProcessInstruction, ProcessInstructionWithContext,
     },
-    instruction::{CompiledInstruction, InstructionError},
+    instruction::{CompiledInstruction, Instruction, InstructionError},
     message::Message,
     native_loader,
     pubkey::Pubkey,
@@ -205,6 +205,7 @@ pub struct ThisInvokeContext {
     compute_budget: ComputeBudget,
     compute_meter: Rc<RefCell<dyn ComputeMeter>>,
     executors: Rc<RefCell<Executors>>,
+    instructions: Rc<RefCell<Vec<Instruction>>>,
 }
 impl ThisInvokeContext {
     pub fn new(
@@ -216,6 +217,7 @@ impl ThisInvokeContext {
         is_cross_program_supported: bool,
         compute_budget: ComputeBudget,
         executors: Rc<RefCell<Executors>>,
+        instructions: Rc<RefCell<Vec<Instruction>>>,
     ) -> Self {
         let mut program_ids = Vec::with_capacity(compute_budget.max_invoke_depth);
         program_ids.push(*program_id);
@@ -231,6 +233,7 @@ impl ThisInvokeContext {
                 remaining: compute_budget.max_units,
             })),
             executors,
+            instructions,
         }
     }
 }
@@ -292,6 +295,8 @@ impl InvokeContext for ThisInvokeContext {
     }
     fn get_executor(&mut self, pubkey: &Pubkey) -> Option<Arc<dyn Executor>> {
         self.executors.borrow().get(&pubkey)
+    fn record_instruction(&self, instruction: Instruction) {
+        self.instructions.borrow_mut().push(instruction);
     }
 }
 pub struct ThisLogger {
@@ -665,6 +670,7 @@ impl MessageProcessor {
         rent_collector: &RentCollector,
         log_collector: Option<Rc<LogCollector>>,
         executors: Rc<RefCell<Executors>>,
+        instructions: Rc<RefCell<Vec<Instruction>>>,
     ) -> Result<(), InstructionError> {
         let pre_accounts = Self::create_pre_accounts(message, instruction, accounts);
         let mut invoke_context = ThisInvokeContext::new(
@@ -676,6 +682,7 @@ impl MessageProcessor {
             self.is_cross_program_supported,
             self.compute_budget,
             executors,
+            instructions,
         );
         let keyed_accounts =
             Self::create_keyed_accounts(message, instruction, executable_accounts, accounts)?;
@@ -702,6 +709,7 @@ impl MessageProcessor {
         rent_collector: &RentCollector,
         log_collector: Option<Rc<LogCollector>>,
         executors: Rc<RefCell<Executors>>,
+        instructions: Rc<RefCell<Vec<Instruction>>>,
     ) -> Result<(), TransactionError> {
         for (instruction_index, instruction) in message.instructions.iter().enumerate() {
             self.execute_instruction(
@@ -712,6 +720,7 @@ impl MessageProcessor {
                 rent_collector,
                 log_collector.clone(),
                 executors.clone(),
+                instructions.clone(),
             )
             .map_err(|err| TransactionError::InstructionError(instruction_index as u8, err))?;
         }
