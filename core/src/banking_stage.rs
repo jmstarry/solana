@@ -531,7 +531,7 @@ impl BankingStage {
         } else {
             vec![]
         };
-        let (mut loaded_accounts, results, mut retryable_txs, tx_count, signature_count) =
+        let (mut loaded_accounts, results, invoked_instructions, mut retryable_txs, tx_count, signature_count) =
             bank.load_and_execute_transactions(batch, MAX_PROCESSING_AGE, None);
         load_execute_time.stop();
 
@@ -569,6 +569,7 @@ impl BankingStage {
                     batch.iteration_order_vec(),
                     tx_results.processing_results,
                     TransactionBalancesSet::new(pre_balances, post_balances),
+                    invoked_instructions,
                     sender,
                 );
             }

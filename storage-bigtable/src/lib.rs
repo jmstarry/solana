@@ -9,8 +9,8 @@ use solana_sdk::{
 };
 use solana_transaction_status::{
     ConfirmedBlock, ConfirmedTransaction, ConfirmedTransactionStatusWithSignature,
-    EncodedTransaction, Rewards, TransactionStatus, TransactionWithStatusMeta,
-    UiTransactionEncoding, UiTransactionStatusMeta,
+    InvokedInstructions, EncodedTransaction, Rewards, TransactionStatus,
+    TransactionWithStatusMeta, UiTransactionEncoding, UiTransactionStatusMeta,
 };
 use std::{
     collections::HashMap,
@@ -185,6 +185,8 @@ struct StoredConfirmedBlockTransactionStatusMeta {
     fee: u64,
     pre_balances: Vec<u64>,
     post_balances: Vec<u64>,
+    #[serde(default)]
+    pub invoked_instructions: Vec<InvokedInstructions>,
 }
 
 impl From<StoredConfirmedBlockTransactionStatusMeta> for UiTransactionStatusMeta {
@@ -194,6 +196,7 @@ impl From<StoredConfirmedBlockTransactionStatusMeta> for UiTransactionStatusMeta
             fee,
             pre_balances,
             post_balances,
+            invoked_instructions,
         } = value;
         let status = match &err {
             None => Ok(()),
@@ -205,6 +208,7 @@ impl From<StoredConfirmedBlockTransactionStatusMeta> for UiTransactionStatusMeta
             fee,
             pre_balances,
             post_balances,
+            invoked_instructions,
         }
     }
 }
@@ -216,6 +220,7 @@ impl From<UiTransactionStatusMeta> for StoredConfirmedBlockTransactionStatusMeta
             fee,
             pre_balances,
             post_balances,
+            invoked_instructions,
             ..
         } = value;
         Self {
@@ -223,6 +228,7 @@ impl From<UiTransactionStatusMeta> for StoredConfirmedBlockTransactionStatusMeta
             fee,
             pre_balances,
             post_balances,
+            invoked_instructions,
         }
     }
 }

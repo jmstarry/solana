@@ -15,7 +15,9 @@ use solana_measure::{measure::Measure, thread_mem_usage};
 use solana_metrics::{datapoint_error, inc_new_counter_debug};
 use solana_rayon_threadlimit::get_thread_count;
 use solana_runtime::{
-    bank::{Bank, TransactionBalancesSet, TransactionProcessResult, TransactionResults},
+    bank::{
+        Bank, TransactionBalancesSet, InvokedInstructionsList, TransactionProcessResult, TransactionResults,
+    },
     bank_forks::BankForks,
     bank_utils,
     commitment::VOTE_THRESHOLD_SIZE,
@@ -99,7 +101,7 @@ fn execute_batch(
     transaction_status_sender: Option<TransactionStatusSender>,
     replay_vote_sender: Option<&ReplayVoteSender>,
 ) -> Result<()> {
-    let (tx_results, balances) = batch.bank().load_execute_and_commit_transactions(
+    let (tx_results, balances, tx_cpis) = batch.bank().load_execute_and_commit_transactions(
         batch,
         MAX_PROCESSING_AGE,
         transaction_status_sender.is_some(),
@@ -120,6 +122,7 @@ fn execute_batch(
             batch.iteration_order_vec(),
             processing_results,
             balances,
+            tx_cpis,
             sender,
         );
     }
@@ -1031,6 +1034,7 @@ pub struct TransactionStatusBatch {
     pub iteration_order: Option<Vec<usize>>,
     pub statuses: Vec<TransactionProcessResult>,
     pub balances: TransactionBalancesSet,
+    pub invoked_instructions: Vec<InvokedInstructionsList>,
 }
 pub type TransactionStatusSender = Sender<TransactionStatusBatch>;
 
@@ -1040,6 +1044,7 @@ pub fn send_transaction_status_batch(
     iteration_order: Option<Vec<usize>>,
     statuses: Vec<TransactionProcessResult>,
     balances: TransactionBalancesSet,
+    invoked_instructions: Vec<InvokedInstructionsList>,
     transaction_status_sender: TransactionStatusSender,
 ) {
     let slot = bank.slot();
@@ -1049,6 +1054,7 @@ pub fn send_transaction_status_batch(
         iteration_order,
         statuses,
         balances,
+        invoked_instructions,
     }) {
         trace!(
             "Slot {} transaction_status send batch failed: {:?}",

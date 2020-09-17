@@ -1,5 +1,6 @@
 use crate::{
-    log_collector::LogCollector, native_loader::NativeLoader, rent_collector::RentCollector,
+    invoked_ix_recorder::InvokedInstructionRecorder, log_collector::LogCollector, native_loader::NativeLoader,
+    rent_collector::RentCollector,
 };
 use log::*;
 use serde::{Deserialize, Serialize};
@@ -205,7 +206,7 @@ pub struct ThisInvokeContext {
     compute_budget: ComputeBudget,
     compute_meter: Rc<RefCell<dyn ComputeMeter>>,
     executors: Rc<RefCell<Executors>>,
-    instructions: Rc<RefCell<Vec<Instruction>>>,
+    invoked_ix_recorder: InvokedInstructionRecorder,
 }
 impl ThisInvokeContext {
     pub fn new(
@@ -217,7 +218,7 @@ impl ThisInvokeContext {
         is_cross_program_supported: bool,
         compute_budget: ComputeBudget,
         executors: Rc<RefCell<Executors>>,
-        instructions: Rc<RefCell<Vec<Instruction>>>,
+        invoked_ix_recorder: InvokedInstructionRecorder,
     ) -> Self {
         let mut program_ids = Vec::with_capacity(compute_budget.max_invoke_depth);
         program_ids.push(*program_id);
@@ -233,7 +234,7 @@ impl ThisInvokeContext {
                 remaining: compute_budget.max_units,
             })),
             executors,
-            instructions,
+            invoked_ix_recorder,
         }
     }
 }
@@ -295,8 +296,9 @@ impl InvokeContext for ThisInvokeContext {
     }
     fn get_executor(&mut self, pubkey: &Pubkey) -> Option<Arc<dyn Executor>> {
         self.executors.borrow().get(&pubkey)
+    }
     fn record_instruction(&self, instruction: Instruction) {
-        self.instructions.borrow_mut().push(instruction);
+        self.invoked_ix_recorder.record_instruction(instruction);
     }
 }
 pub struct ThisLogger {
@@ -670,7 +672,7 @@ impl MessageProcessor {
         rent_collector: &RentCollector,
         log_collector: Option<Rc<LogCollector>>,
         executors: Rc<RefCell<Executors>>,
-        instructions: Rc<RefCell<Vec<Instruction>>>,
+        invoked_ix_recorder: InvokedInstructionRecorder,
     ) -> Result<(), InstructionError> {
         let pre_accounts = Self::create_pre_accounts(message, instruction, accounts);
         let mut invoke_context = ThisInvokeContext::new(
@@ -682,7 +684,7 @@ impl MessageProcessor {
             self.is_cross_program_supported,
             self.compute_budget,
             executors,
-            instructions,
+            invoked_ix_recorder,
         );
         let keyed_accounts =
             Self::create_keyed_accounts(message, instruction, executable_accounts, accounts)?;
@@ -709,9 +711,10 @@ impl MessageProcessor {
         rent_collector: &RentCollector,
         log_collector: Option<Rc<LogCollector>>,
         executors: Rc<RefCell<Executors>>,
-        instructions: Rc<RefCell<Vec<Instruction>>>,
+        invoked_ix_recorder: InvokedInstructionRecorder,
     ) -> Result<(), TransactionError> {
         for (instruction_index, instruction) in message.instructions.iter().enumerate() {
+            invoked_ix_recorder.next_instruction();
             self.execute_instruction(
                 message,
                 instruction,
@@ -720,7 +723,7 @@ impl MessageProcessor {
                 rent_collector,
                 log_collector.clone(),
                 executors.clone(),
-                instructions.clone(),
+                invoked_ix_recorder.clone(),
             )
             .map_err(|err| TransactionError::InstructionError(instruction_index as u8, err))?;
         }
@@ -778,6 +781,7 @@ mod tests {
             true,
             ComputeBudget::default(),
             Rc::new(RefCell::new(Executors::default())),
+            InvokedInstructionRecorder::default(),
         );
 
         // Check call depth increases and has a limit
@@ -1590,6 +1594,7 @@ mod tests {
             true,
             ComputeBudget::default(),
             Rc::new(RefCell::new(Executors::default())),
+            InvokedInstructionRecorder::default(),
         );
         let metas = vec![
             AccountMeta::new(owned_key, false),

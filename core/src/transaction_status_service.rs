@@ -1,4 +1,5 @@
 use crossbeam_channel::{Receiver, RecvTimeoutError};
+use itertools::izip;
 use solana_ledger::{blockstore::Blockstore, blockstore_processor::TransactionStatusBatch};
 use solana_runtime::{
     bank::{Bank, HashAgeKind},
@@ -54,15 +55,23 @@ impl TransactionStatusService {
             iteration_order,
             statuses,
             balances,
+            invoked_instructions,
         } = write_transaction_status_receiver.recv_timeout(Duration::from_secs(1))?;
 
         let slot = bank.slot();
-        for ((((_, transaction), (status, hash_age_kind)), pre_balances), post_balances) in
-            OrderedIterator::new(&transactions, iteration_order.as_deref())
-                .zip(statuses)
-                .zip(balances.pre_balances)
-                .zip(balances.post_balances)
-        {
+        for (
+            (_, transaction),
+            (status, hash_age_kind),
+            pre_balances,
+            post_balances,
+            invoked_instructions,
+        ) in izip!(
+            OrderedIterator::new(&transactions, iteration_order.as_deref()),
+            statuses,
+            balances.pre_balances,
+            balances.post_balances,
+            invoked_instructions
+        ) {
             if Bank::can_commit(&status) && !transaction.signatures.is_empty() {
                 let fee_calculator = match hash_age_kind {
                     Some(HashAgeKind::DurableNonce(_, account)) => {
@@ -77,6 +86,18 @@ impl TransactionStatusService {
                 );
                 let (writable_keys, readonly_keys) =
                     transaction.message.get_account_keys_by_lock_type();
+
+                let invoked_instructions = invoked_instructions.into_iter().enumerate().filter_map(|(index, cpi)| {
+                    if cpi.len() == 0 {
+                        None
+                    } else {
+                        Some(solana_transaction_status::InvokedInstructions {
+                            instruction_index: index as u8,
+                            invoked_instructions: cpi,
+                        })
+                    }
+                }).collect();
+
                 blockstore
                     .write_transaction_status(
                         slot,
@@ -88,6 +109,7 @@ impl TransactionStatusService {
                             fee,
                             pre_balances,
                             post_balances,
+                            invoked_instructions,
                         },
                     )
                     .expect("Expect database write to succeed");

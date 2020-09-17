@@ -80,11 +80,19 @@ impl UiPartiallyDecodedInstruction {
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct InvokedInstructions {
+    pub instruction_index: u8,
+    pub invoked_instructions: Vec<CompiledInstruction>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TransactionStatusMeta {
     pub status: Result<()>,
     pub fee: u64,
     pub pre_balances: Vec<u64>,
     pub post_balances: Vec<u64>,
+    pub invoked_instructions: Vec<InvokedInstructions>,
 }
 
 impl Default for TransactionStatusMeta {
@@ -94,6 +102,7 @@ impl Default for TransactionStatusMeta {
             fee: 0,
             pre_balances: vec![],
             post_balances: vec![],
+            invoked_instructions: vec![],
         }
     }
 }
@@ -107,6 +116,7 @@ pub struct UiTransactionStatusMeta {
     pub fee: u64,
     pub pre_balances: Vec<u64>,
     pub post_balances: Vec<u64>,
+    pub invoked_instructions: Vec<InvokedInstructions>,
 }
 
 impl From<TransactionStatusMeta> for UiTransactionStatusMeta {
@@ -117,6 +127,7 @@ impl From<TransactionStatusMeta> for UiTransactionStatusMeta {
             fee: meta.fee,
             pre_balances: meta.pre_balances,
             post_balances: meta.post_balances,
+            invoked_instructions: meta.invoked_instructions,
         }
     }
 }

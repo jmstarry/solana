@@ -11,6 +11,7 @@ use crate::{
     accounts_index::Ancestors,
     blockhash_queue::BlockhashQueue,
     builtins::get_builtins,
+    invoked_ix_recorder::InvokedInstructionRecorder,
     epoch_stakes::{EpochStakes, NodeVoteAccounts},
     log_collector::LogCollector,
     message_processor::{Executors, MessageProcessor},
@@ -47,6 +48,7 @@ use solana_sdk::{
     incinerator,
     inflation::Inflation,
     message::Message,
+    instruction::CompiledInstruction,
     native_loader,
     native_token::sol_to_lamports,
     nonce,
@@ -298,6 +300,12 @@ impl TransactionBalancesSet {
     }
 }
 pub type TransactionBalances = Vec<Vec<u64>>;
+
+/// An ordered list of instructions that were invoked during a transaction instruction
+pub type InvokedInstructions = Vec<CompiledInstruction>;
+
+/// A list of instructions that were invoked during each instruction of a transaction
+pub type InvokedInstructionsList = Vec<InvokedInstructions>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HashAgeKind {
@@ -1527,6 +1535,7 @@ impl Bank {
             _retryable_transactions,
             _transaction_count,
             _signature_count,
+            _tx_cpis,
         ) = self.load_and_execute_transactions(
             &batch,
             MAX_PROCESSING_AGE,
@@ -1918,6 +1927,7 @@ impl Bank {
     ) -> (
         Vec<(Result<TransactionLoadResult>, Option<HashAgeKind>)>,
         Vec<TransactionProcessResult>,
+        Vec<InvokedInstructionsList>,
         Vec<usize>,
         u64,
         u64,
@@ -1958,10 +1968,9 @@ impl Bank {
 
         // This is rough, doesn't have to be in this form, just needs to be able to be
         // conveyed through `InvokeContext` to the CPI syscall handler
-        let cpi_instructions = Rc::new(RefCell::new(vec![]));
-
         let mut execution_time = Measure::start("execution_time");
         let mut signature_count: u64 = 0;
+        let mut invoked_instructions: Vec<InvokedInstructionsList> = Vec::with_capacity(txs.len());
         let executed: Vec<TransactionProcessResult> = loaded_accounts
             .iter_mut()
             .zip(OrderedIterator::new(txs, batch.iteration_order()))
@@ -1975,6 +1984,7 @@ impl Bank {
                     let (account_refcells, loader_refcells) =
                         Self::accounts_to_refcells(accounts, loaders);
 
+                    let invoked_ix_recorder = InvokedInstructionRecorder::default();
                     let process_result = self.message_processor.process_message(
                         tx.message(),
                         &loader_refcells,
@@ -1982,7 +1992,7 @@ impl Bank {
                         &self.rent_collector,
                         log_collector.clone(),
                         executors.clone(),
-                        cpi_instructions.clone(),
+                        invoked_ix_recorder.clone(),
                     );
 
                     Self::refcells_to_accounts(
@@ -1993,6 +2003,7 @@ impl Bank {
                     );
 
                     self.update_executors(executors);
+                    invoked_instructions.push(invoked_ix_recorder.compile_instructions(tx.message()));
 
                     if let Err(TransactionError::InstructionError(_, _)) = &process_result {
                         error_counters.instruction_error += 1;
@@ -2003,11 +2014,6 @@ impl Bank {
             .collect();
 
         execution_time.stop();
-
-        // The instructions are available here
-        for (i, instruction) in cpi_instructions.borrow().iter().enumerate() {
-            println!("cpi instructions {:?}: {:?}\n", i, instruction);
-        }
 
         debug!(
             "load: {}us execute: {}us txs_len={}",
@@ -2039,6 +2045,7 @@ impl Bank {
         (
             loaded_accounts,
             executed,
+            invoked_instructions,
             retryable_txs,
             tx_count,
             signature_count,
@@ -2665,13 +2672,13 @@ impl Bank {
         batch: &TransactionBatch,
         max_age: usize,
         collect_balances: bool,
-    ) -> (TransactionResults, TransactionBalancesSet) {
+    ) -> (TransactionResults, TransactionBalancesSet, Vec<InvokedInstructionsList>) {
         let pre_balances = if collect_balances {
             self.collect_balances(batch)
         } else {
             vec![]
         };
-        let (mut loaded_accounts, executed, _, tx_count, signature_count) =
+        let (mut loaded_accounts, executed, invoked_instructions, _, tx_count, signature_count) =
             self.load_and_execute_transactions(batch, max_age, None);
 
         let results = self.commit_transactions(
@@ -2690,6 +2697,7 @@ impl Bank {
         (
             results,
             TransactionBalancesSet::new(pre_balances, post_balances),
+            invoked_instructions,
         )
     }
 

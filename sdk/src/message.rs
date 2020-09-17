@@ -215,6 +215,21 @@ impl Sanitize for Message {
 }
 
 impl Message {
+    pub fn compile_instruction(&self, ix: &Instruction) -> CompiledInstruction {
+        let keys = &self.account_keys;
+        let accounts: Vec<_> = ix
+            .accounts
+            .iter()
+            .map(|account_meta| position(keys, &account_meta.pubkey))
+            .collect();
+
+        CompiledInstruction {
+            program_id_index: position(keys, &ix.program_id),
+            data: ix.data.clone(),
+            accounts,
+        }
+    }
+
     pub fn new_with_compiled_instructions(
         num_required_signatures: u8,
         num_readonly_signed_accounts: u8,
